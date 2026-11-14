@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """DeepSeek 调用封装：超时、限流、5xx 重试；只重试可恢复错误。"""
+import json
 import os
 
 import requests
@@ -59,3 +60,34 @@ def chat(messages, temperature=0.0, max_tokens=800, model=None):
 
             time.sleep(2 * (i + 1))
     raise RuntimeError("调用失败（重试 %d 次）：%s" % (RETRIES, last))
+
+
+def chat_stream(messages, temperature=0.0, max_tokens=800, model=None):
+    """流式输出：逐个 yield 文本增量。给 FastAPI 的 SSE 接口用。"""
+    _load_dotenv()
+    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not key:
+        raise RuntimeError("缺少 DEEPSEEK_API_KEY：在项目根目录 .env 里写 DEEPSEEK_API_KEY=sk-xxx")
+    url = BASE_URL.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": model or MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
+    with requests.post(url, json=payload, headers=headers, timeout=TIMEOUT, stream=True) as r:
+        r.raise_for_status()
+        for raw in r.iter_lines(decode_unicode=True):
+            if not raw or not raw.startswith("data:"):
+                continue
+            chunk = raw[5:].strip()
+            if chunk == "[DONE]":
+                break
+            try:
+                delta = json.loads(chunk)["choices"][0]["delta"].get("content")
+            except (KeyError, IndexError, ValueError):
+                continue
+            if delta:
+                yield delta

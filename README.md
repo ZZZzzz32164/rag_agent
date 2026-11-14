@@ -6,16 +6,20 @@
 
 ```
 rag_agent/
+├─ api.py            FastAPI 服务层：/health、/ask、/ask/stream（SSE）、HTML 演示页
+├─ Dockerfile        自带索引构建与 healthcheck 的镜像
 ├─ src/
 │  ├─ chunking.py    按 Markdown 标题切块，过长再按句子切，块间重叠
 │  ├─ embedder.py    可插拔向量后端：bge（语义）/ lsa（TF-IDF+SVD）/ hash（零依赖）
 │  ├─ index.py       建索引、落盘、余弦检索、拼带编号上下文
 │  ├─ memory.py      tiktoken 计数、按预算裁剪、摘要压缩、长期记忆
-│  ├─ llm.py         DeepSeek 调用（超时、429/5xx 重试）
+│  ├─ llm.py         DeepSeek 调用（超时、429/5xx 重试、流式）
 │  └─ agent.py       检索 + 生成 + 引用校验 + 低分拒答
 ├─ eval/
 │  ├─ qa_set.jsonl   10 条问题与期望命中的关键词
-│  └─ run_eval.py    算 Hit@K 和 MRR
+│  ├─ qa_out_of_scope.jsonl  6 条库外问题（测拒答）
+│  ├─ run_eval.py    算 Hit@K 和 MRR
+│  └─ run_agent_eval.py  端到端：引用合法率 / 拒答率 / 耗时
 └─ data/knowledge/   3 篇笔记（Agent 基础 / MCP 与工具 / 工程化）
 ```
 
@@ -77,7 +81,9 @@ python -m src.agent "为什么切块要留重叠"
 
 ## 端到端（真调 DeepSeek）
 
+```bash
 python -m eval.run_agent_eval --k 3
+```
 
 | 指标 | 结果 |
 |---|---|
@@ -85,3 +91,32 @@ python -m eval.run_agent_eval --k 3
 | 引用编号全部合法（不指向不存在资料） | 10/10 |
 | 库外 6 条：正确拒答 | 6/6 |
 | 平均耗时 | 0.65 s/题 |
+
+## HTTP 服务（FastAPI）
+
+```bash
+pip install -r requirements-api.txt
+uvicorn api:app --port 8000
+```
+
+| 接口 | 说明 |
+|---|---|
+| `GET /` | 演示页，输入问题直接看流式回答与命中来源 |
+| `GET /health` | 后端、维度、块数、当前阈值 |
+| `POST /ask` | `{"question": "...", "top_k": 3}` → 回答 + 引用 + 命中列表 |
+| `POST /ask/stream` | 同上，SSE：先发 `event: hits`，再逐字 `event: token`，最后 `event: done` |
+
+```bash
+curl -s localhost:8000/health
+curl -s -X POST localhost:8000/ask -H 'Content-Type: application/json' \
+     -d '{"question":"为什么要留重叠","top_k":3}'
+```
+
+### Docker
+
+```bash
+docker build -t rag-agent .
+docker run -p 8000:8000 -e DEEPSEEK_API_KEY=sk-xxx rag-agent
+```
+
+镜像里会在构建期把索引建好（`data/index`），容器起来直接能答；torch 走 CPU 源，不含 CUDA。

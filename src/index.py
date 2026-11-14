@@ -79,7 +79,9 @@ class Index(object):
 
     # ---------- 检索 ----------
     def search(self, query, top_k=3):
-        q = self.embedder.encode([query])[0]
+        # 查询侧若后端支持指令前缀，就走 encode_query（bge 官方建议）
+        enc = getattr(self.embedder, "encode_query", None) or self.embedder.encode
+        q = enc([query])[0]
         scores = self.vectors.dot(q)
         order = np.argsort(-scores)[:top_k]
         out = []

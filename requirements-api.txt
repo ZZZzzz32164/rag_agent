@@ -1,0 +1,3 @@
+# 服务层额外依赖：pip install -r requirements-api.txt
+fastapi>=0.110
+uvicorn[standard]>=0.27

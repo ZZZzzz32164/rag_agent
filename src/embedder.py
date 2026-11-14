@@ -59,19 +59,37 @@ class LSAEmbedder(BaseEmbedder):
 
 
 class BgeEmbedder(BaseEmbedder):
-    """bge-small-zh：真实语义向量，需要 sentence-transformers。"""
+    """bge-small-zh：真实语义向量，需要 sentence-transformers。
+
+    bge 中文版官方建议：查库（doc）直接编码，查问题（query）时加一句指令前缀，
+    检索效果会更好。这里把前缀做成可配置的，索引和查询走不同入口。
+    """
 
     name = "bge"
+    QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
 
-    def __init__(self, model="BAAI/bge-small-zh-v1.5"):
+    def __init__(self, model="BAAI/bge-small-zh-v1.5", query_instruction=None):
         from sentence_transformers import SentenceTransformer
 
         self.model_name = model
         self.model = SentenceTransformer(model)
         self.dim = self.model.get_sentence_embedding_dimension()
+        if query_instruction is None:
+            # bge v1.5 起官方不再要求给 query 加指令前缀，加了反而拉低分数
+            query_instruction = "" if "v1.5" in model else self.QUERY_INSTRUCTION
+        self.query_instruction = query_instruction
 
     def encode(self, texts):
+        """文档侧编码（建索引用）。"""
         vecs = self.model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        return np.asarray(vecs, dtype="float32")
+
+    def encode_query(self, texts):
+        """查询侧编码：加官方指令前缀。"""
+        if not self.query_instruction:
+            return self.encode(texts)
+        prefixed = [self.query_instruction + t for t in texts]
+        vecs = self.model.encode(prefixed, normalize_embeddings=True, show_progress_bar=False)
         return np.asarray(vecs, dtype="float32")
 
 
