@@ -1,0 +1,36 @@
+{"q": "根据该成功标准，任何单一组织最多可以有几名 Leads？", "expect": "no more than 2 Leads from any single organisation", "source": "mcp/modelcontextprotocol_io_community_working_groups_governance.md", "chunk_id": 21}
+{"q": "服务端工具调用的标识符字段名是什么？", "expect": "Identifier of the server tool call.", "source": "deepseek/api_docs_deepseek_com_api_create_message.md", "chunk_id": 58}
+{"q": "Netflix 宣布开源的危机管理编排框架叫什么名字？", "expect": "Netflix 很高兴宣布开源我们的 危机管理 编排框架： Dispatch", "source": "fastapi/fastapi_tiangolo_com_zh.md", "chunk_id": 4}
+{"q": "Agents Extension Evaluation 主要评估哪几类 agent-backed MCP 用例？", "expect": "includingagent-as-tool, remote-agent, and supervisor/sub-agent patterns", "source": "mcp/modelcontextprotocol_io_community_interest_groups_agents.md", "chunk_id": 1}
+{"q": "web 工具产生的块上，DeepSeek 扩展字段可能取哪些值？", "expect": "Possible values: search , deep_search , read_link , image_search , deep_image_search", "source": "deepseek/api_docs_deepseek_com_api_create_message.md", "chunk_id": 115}
+{"q": "根据该片段，哪些与供应商相关的事项属于需要特别处理的内容？", "expect": "Matters relating to actual or potential individual suppliers that might have the effect of excluding them from any market", "source": "mcp/modelcontextprotocol_io_community_antitrust.md", "chunk_id": 3}
+{"q": "文档中关于 user_id 参数当前的支持状态是怎么说明的？", "expect": "This parameter is no longer supported. It will not take effect if you pass it to the API.", "source": "deepseek/api_docs_deepseek_com_api_create_chat_completion.md", "chunk_id": 40}
+{"q": "在 web tools 中，用于启用搜索能力以及深度思考搜索步骤的声明工具名是什么？", "expect": "deepseek_web_search for searches and the steps of deep thinking search", "source": "deepseek/api_docs_deepseek_com_api_create_message.md", "chunk_id": 86}
+{"q": "对于 function_call 类型的 item，模型生成的 arguments 字段是否一定是有效 JSON？", "expect": "the model does not always generate valid JSON", "source": "deepseek/api_docs_deepseek_com_api_create_response.md", "chunk_id": 43}
+{"q": "教程 - 用户指南中提到的校验约束示例包括哪两个？", "expect": "如何设置 校验约束 ，如 maximum_length 或 regex", "source": "fastapi/fastapi_tiangolo_com_zh.md", "chunk_id": 22}
+{"q": "使用 Depends 声明依赖项时，传入的参数必须是什么类型的对象？", "expect": "这个参数必须是类似函数的可调用对象。", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_dependencies.md", "chunk_id": 6}
+{"q": "FastAPI 类是从哪个类直接继承的？", "expect": "FastAPI 是直接从 Starlette 继承的类。", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_first_steps.md", "chunk_id": 16}
+{"q": "在 Responses API 格式中，custom 工具类型只支持哪个 name 值？", "expect": "only {\"type\": \"custom\", \"name\": \"apply_patch\"} is supported", "source": "deepseek/api_docs_deepseek_com_api_create_response.md", "chunk_id": 29}
+{"q": "在错误响应示例中，error 对象的 type 字段可能取哪些值？", "expect": "The error type, such as invalid_request_error or rate_limit_error", "source": "deepseek/api_docs_deepseek_com_api_create_message.md", "chunk_id": 128}
+{"q": "哪个小组负责应用发现、分发和元数据？", "expect": "Registry WG : App discovery, distribution, and metadata.", "source": "mcp/modelcontextprotocol_io_community_working_groups_apps.md", "chunk_id": 7}
+{"q": "文档中列举的“等待其他事情”通常指与处理器和RAM速度相比相对较慢的哪类操作？", "expect": "这个\"等待其他事情\"通常指的是一些相对较慢（与处理器和 RAM 存储器的速度相比）的 I/O 操作", "source": "fastapi/fastapi_tiangolo_com_zh_async.md", "chunk_id": 5}
+{"q": "在 FastAPI 中定义 header 参数时，第一个值代表什么？", "expect": "第一个值是默认值，还可以传递所有验证参数或注释参数", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_header_params.md", "chunk_id": 3}
+{"q": "FastAPI 官方技能（official FastAPI skill）应该从哪个目录安装？", "expect": "Install it from your project directory", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_security.md", "chunk_id": 1}
+{"q": "DeepSeek 扩展中，安全审查消耗的 token 在什么条件下才会出现在响应里？", "expect": "Present only when safety_check is high", "source": "deepseek/api_docs_deepseek_com_api_create_message.md", "chunk_id": 123}
+{"q": "Pydantic 模型的 .model_dump() 方法返回的是什么类型的数据？", "expect": "Pydantic 模型有 .model_dump() 方法，会返回包含模型数据的 dict", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_extra_models.md", "chunk_id": 3}
+{"q": "在 v0.1 中，导师制是以什么形式被鼓励的？", "expect": "Encouraging mentorship as a culture (not a formal pairings program in v0.1)", "source": "mcp/modelcontextprotocol_io_community_working_groups_governance.md", "chunk_id": 3}
+{"q": "对于stdio等非HTTP传输方式，HTTP授权规范不适用时，需要关注哪类安全内容？", "expect": "unauthenticated surfacearea for stdio and other non-HTTP transports", "source": "mcp/modelcontextprotocol_io_community_interest_groups_security.md", "chunk_id": 4}
+{"q": "在 Responses 的 token 统计中，哪个字段表示 prompt 中命中上下文缓存的 token 数量？", "expect": "Number of tokens in the prompt that hits the context cache.", "source": "deepseek/api_docs_deepseek_com_api_create_completion.md", "chunk_id": 21}
+{"q": "该文档片段中，向哪些工作组提供来自企业实践者的结构化输入？", "expect": "Providing structured input from enterprise practitioners to the Authorization IG", "source": "mcp/modelcontextprotocol_io_community_interest_groups_enterprise.md", "chunk_id": 9}
+{"q": "根据该片段，哪类内容属于产品文档而非协议工作，因此不在本片段范围内？", "expect": "step-by-step configuration for an individual hostapplication", "source": "mcp/modelcontextprotocol_io_community_interest_groups_financial_services.md", "chunk_id": 6}
+{"q": "根据该成功标准，至少需要在几个 Tier-1 SDK 中提供参考实现？", "expect": "Reference implementations in at least two Tier-1 SDKs.", "source": "mcp/modelcontextprotocol_io_community_working_groups_file_uploads.md", "chunk_id": 10}
+{"q": "威胁建模输入中，用于编制授权相关攻击面以支撑安全最佳实践文档的内容包括哪些攻击类型？", "expect": "cataloguing authorization-related attack surfaces (token confusion, confused-deputy, audience mismatch, redirect handling)", "source": "mcp/modelcontextprotocol_io_community_interest_groups_auth.md", "chunk_id": 6}
+{"q": "文档中提到的“Server-side search”旨在解决什么问题？", "expect": "so a client can find contentwithout listing and reading every resource", "source": "mcp/modelcontextprotocol_io_community_working_groups_filesystems.md", "chunk_id": 6}
+{"q": "openIdConnect 提供了一种定义如何自动发现什么数据的方法？", "expect": "提供了一种定义如何自动发现 OAuth2 身份认证数据的方法", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_security.md", "chunk_id": 9}
+{"q": "completion_tokens_details 中的安全审核 token 在什么条件下才会出现？", "expect": "Present only when safety_check is high", "source": "deepseek/api_docs_deepseek_com_api_create_chat_completion.md", "chunk_id": 57}
+{"q": "SEP-1865 在哪一天被标记为 Final？", "expect": "2026-01-28\nSEP-1865 marked Final", "source": "mcp/modelcontextprotocol_io_community_working_groups_apps.md", "chunk_id": 16}
+{"q": "OAuth2PasswordRequestForm 类依赖项的实例支持哪个属性来接收已发送的 scope 字符串列表？", "expect": "但它支持 scopes 属性，由已发送的 scope 字符串列表组成", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_security_simple_oauth2.md", "chunk_id": 7}
+{"q": "stop 参数最多可以包含多少个停止序列？", "expect": "Up to 16 sequences where the API will stop generating further tokens.", "source": "deepseek/api_docs_deepseek_com_api_create_chat_completion.md", "chunk_id": 21}
+{"q": "在 Pydantic 模型中，要禁止任何额外字段，model_config 里的 extra 应设置成什么值？", "expect": "model_config = { \"extra\" : \"forbid\" }", "source": "fastapi/fastapi_tiangolo_com_zh_tutorial_cookie_param_models.md", "chunk_id": 6}
+{"q": "根据该片段，与价格相关的数据中，除了利润和利润率外，还包括哪一项？", "expect": "data that bear on prices, including profits, margins or cost", "source": "mcp/modelcontextprotocol_io_community_antitrust.md", "chunk_id": 1}
+{"q": "片段中提到的现有工具注解（tool annotations）包括哪四个？", "expect": "readOnlyHint , destructiveHint , idempotentHint , openWorldHint", "source": "mcp/modelcontextprotocol_io_community_interest_groups_tool_annotations.md", "chunk_id": 1}

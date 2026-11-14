@@ -20,9 +20,10 @@ THRESHOLD_BY_BACKEND = {"bge": 0.55, "lsa": 0.30, "hash": 0.20}  # 三种后端�
 
 
 class RAGAgent(object):
-    def __init__(self, index=None, index_dir=None, top_k=3, llm=None, threshold=None):
+    def __init__(self, index=None, index_dir=None, top_k=3, llm=None, threshold=None, mode=None):
         self.index = index or Index.load(index_dir or os.path.join(ROOT, "data", "index"))
         self.top_k = top_k
+        self.mode = mode or os.environ.get("RETRIEVE_MODE", "vector")
         self._llm = llm
         self.threshold = threshold if threshold is not None else \
             THRESHOLD_BY_BACKEND.get(self.index.embedder.name, SCORE_THRESHOLD)
@@ -35,11 +36,17 @@ class RAGAgent(object):
         return llm_mod.chat(messages)
 
     def retrieve(self, question):
-        return self.index.search(question, self.top_k)
+        return self.index.search(question, self.top_k, mode=self.mode)
 
     def ask(self, question):
+        # 拒答判定用「向量相似度」——它是 0~1 的余弦分，阈值 0.55 只在它上面校准过；
+        # RRF 分与 cross-encoder 分数量纲不同，不能直接和 0.55 比。
+        vec_hits = self.index.search(question, 1, mode="vector")
+        if not vec_hits or vec_hits[0]["score"] < self.threshold:
+            return {"answer": "资料中没有相关内容。", "hits": [], "cited": [], "refused": True}
+
         hits = self.retrieve(question)
-        if not hits or hits[0]["score"] < self.threshold:
+        if not hits:
             return {"answer": "资料中没有相关内容。", "hits": hits, "cited": [], "refused": True}
 
         prompt = "【参考资料】\n%s\n\n【问题】%s\n\n请依据资料回答，并标注来源编号。" % (

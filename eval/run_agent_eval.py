@@ -29,13 +29,14 @@ def load(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index", default=os.path.join(ROOT, "data", "index"))
+    ap.add_argument("--index", default=os.path.join(ROOT, "data", "index_docs"))
+    ap.add_argument("--qa", default=os.path.join(ROOT, "eval", "qa_docs.jsonl"))
     ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--limit", type=int, default=0, help="只跑前 N 条，0 表示全跑")
     args = ap.parse_args()
 
     agent = RAGAgent(index_dir=args.index, top_k=args.k)
-    qa = load(os.path.join(ROOT, "eval", "qa_set.jsonl"))
+    qa = load(args.qa)
     if args.limit:
         qa = qa[:args.limit]
 
@@ -44,11 +45,11 @@ def main():
     print("== 库内问题 ==")
     for item in qa:
         r = agent.ask(item["q"])
-        cited = r["cited"]
-        good = cited["has_citation"] and cited["valid"] and not cited["invalid"]
-        n_cite += 1 if cited["has_citation"] else 0
+        cited = r["cited"] if isinstance(r["cited"], dict) else {}
+        good = bool(cited.get("has_citation")) and bool(cited.get("valid")) and not cited.get("invalid")
+        n_cite += 1 if cited.get("has_citation") else 0
         n_valid += 1 if good else 0
-        print("%s 引用=%s | %s" % ("OK  " if good else "WARN", cited["valid"], item["q"]))
+        print("%s 引用=%s | %s" % ("OK  " if good else "WARN", cited.get("valid"), item["q"]))
         print("     %s" % r["answer"].replace("\n", " ")[:80])
 
     oos = load(os.path.join(ROOT, "eval", "qa_out_of_scope.jsonl"))

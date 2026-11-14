@@ -1,0 +1,175 @@
+<!-- source: https://api-docs.deepseek.com/api/create-completion -->
+```
+POST /completions
+```
+
+## /completions
+FIM (Fill In the Middle) Completion API. User must set base_url="https://api.deepseek.com/beta" to use this feature.
+
+## Request ​
+- application/json
+Body
+required
+Possible values: deepseek-flash , deepseek-v4-pro
+ID of the model to use. Use deepseek-flash or deepseek-v4-pro .
+The prompt to generate completions for.
+Default value: false
+Echo back the prompt in addition to the completion. Cannot be used together with suffix or logprobs .
+Possible values: >= 0 and <= 20
+Default value: null
+Include the log probabilities on the logprobs most likely output tokens, as well the chosen tokens. For example, if logprobs is 20, the API will return a list of the 20 most likely tokens. The API will always return the logprob of the sampled token, so there may be up to logprobs+1 elements in the response.
+The maximum value for logprobs is 20.
+Possible values: >= 0
+The maximum number of tokens that can be generated in the completion.
+nullable
+Default value: null
+Up to 16 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.
+oneOf
+- MOD1
+- MOD2
+string
+Minimum items: 1
+Maximum items: 16
+- Array [
+Array [
+string
+- ]
+]
+Default value: false
+Whether to stream back partial progress. If set, tokens will be sent as data-only server-sent events as they become available, with the stream terminated by a data: [DONE] message. Example Python code .
+stream_options
+object
+nullable
+Default value: null
+Options for streaming response. Must be set together with stream: true ; if stream is not set to true , the API returns a 400 error.
+If set to true , all chunks in the stream will include a usage field, whose value is null on every chunk except the last one. If omitted or set to false , the usage field is absent from all chunks except the last one.
+Either way, the last chunk before the data: [DONE] message carries the token usage statistics for the entire request in its usage field. Note that no separate usage-only chunk is emitted: the statistics ride on the last content chunk, whose choices array always contains exactly one element that carries no new content and a non-null finish_reason .
+Default value: null
+The suffix that comes after a completion of inserted text.
+Possible values: >= 0 and <= 2
+Default value: 1
+What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.
+We generally recommend altering this or top_p but not both.
+Possible values: > 0 and <= 1
+Default value: 1
+An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.
+The value must be greater than 0 and at most 1. We generally recommend altering this or temperature but not both.
+This parameter is no longer supported. It will not take effect if you pass it to the API.
+This parameter is no longer supported. It will not take effect if you pass it to the API.
+
+## Responses ​
+- 200
+- 200 (Streaming)
+OK
+- application/json
+- Schema
+- Example
+Schema
+A unique identifier for the completion.
+choices
+object[]
+required
+The list of completion choices the model generated for the input prompt.
+- Array [
+Array [
+Possible values: stop , length , content_filter , insufficient_system_resource , aborted
+The reason the model stopped generating tokens. This will be stop if the model hit a natural stop point or a provided stop sequence, length if the maximum number of tokens specified in the request was reached, content_filter if content was omitted due to a flag from our content filters, insufficient_system_resource if the request is interrupted due to insufficient resource of the inference system,
+or aborted if the generation was interrupted.
+logprobs
+object
+nullable
+required
+- ]
+]
+The Unix timestamp (in seconds) of when the completion was created.
+The model used for completion.
+This fingerprint represents the backend configuration that the model runs with.
+Possible values: text_completion
+The object type, which is always "text_completion"
+usage
+object
+Usage statistics for the completion request.
+Number of tokens in the generated completion.
+Number of tokens in the prompt. It equals prompt_cache_hit_tokens + prompt_cache_miss_tokens.
+prompt_tokens_details
+object
+required
+Breakdown of tokens used in the prompt.
+Number of tokens in the prompt that hit the context cache. Same as prompt_cache_hit_tokens .
+Number of tokens in the prompt that hits the context cache.
+Number of tokens in the prompt that misses the context cache.
+Total number of tokens used in the request (prompt + completion).
+completion_tokens_details
+object
+Breakdown of tokens used in a completion.
+Tokens generated by the model for reasoning.
+Possible values: >= 0
+DeepSeek extension. Tokens of the safety review, already included in completion_tokens . Present only when safety_check is high .
+server_tool_use
+object
+With the web tools. The numbers of billed searches and fetches; omitted when all counts are zero. See the Web Tools Guide .
+Possible values: >= 0
+Number of billed searches, excluding image searches.
+Possible values: >= 0
+Number of billed page fetches.
+Possible values: >= 0
+Number of billed image searches.
+OK, returns completion chunks as server-sent events, followed by data: [DONE] .
+- text/event-stream
+- Schema
+- Example
+Schema
+Represents a completion response from the API. Note: both the streamed and non-streamed response objects share the same shape (unlike the chat endpoint).
+- Array [
+Array [
+A unique identifier for the completion.
+choices
+object[]
+required
+The list of completion choices the model generated for the input prompt.
+- Array [
+Array [
+Possible values: stop , length , content_filter , insufficient_system_resource , aborted
+The reason the model stopped generating tokens. This will be stop if the model hit a natural stop point or a provided stop sequence, length if the maximum number of tokens specified in the request was reached, content_filter if content was omitted due to a flag from our content filters, insufficient_system_resource if the request is interrupted due to insufficient resource of the inference system,
+or aborted if the generation was interrupted.
+logprobs
+object
+nullable
+required
+- ]
+]
+The Unix timestamp (in seconds) of when the completion was created.
+The model used for completion.
+This fingerprint represents the backend configuration that the model runs with.
+Possible values: text_completion
+The object type, which is always "text_completion"
+usage
+object
+Usage statistics for the completion request.
+Number of tokens in the generated completion.
+Number of tokens in the prompt. It equals prompt_cache_hit_tokens + prompt_cache_miss_tokens.
+prompt_tokens_details
+object
+required
+Breakdown of tokens used in the prompt.
+Number of tokens in the prompt that hit the context cache. Same as prompt_cache_hit_tokens .
+Number of tokens in the prompt that hits the context cache.
+Number of tokens in the prompt that misses the context cache.
+Total number of tokens used in the request (prompt + completion).
+completion_tokens_details
+object
+Breakdown of tokens used in a completion.
+Tokens generated by the model for reasoning.
+Possible values: >= 0
+DeepSeek extension. Tokens of the safety review, already included in completion_tokens . Present only when safety_check is high .
+server_tool_use
+object
+With the web tools. The numbers of billed searches and fetches; omitted when all counts are zero. See the Web Tools Guide .
+Possible values: >= 0
+Number of billed searches, excluding image searches.
+Possible values: >= 0
+Number of billed page fetches.
+Possible values: >= 0
+Number of billed image searches.
+- ]
+]
