@@ -1,0 +1,7 @@
+sentence-transformers==3.2.1
+scikit-learn>=1.0
+jieba>=0.42
+numpy>=1.20
+requests>=2.25
+tiktoken>=0.5
+joblib>=1.1
