@@ -86,6 +86,9 @@ python -m eval.gen_qa --n 45     # 写入 eval/qa_docs.jsonl
 
 ## 实测数字（1728 块 / 36 题 / k=3）
 
+> 复现：`python -m eval.run_eval --k 3 --modes vector,keyword,hybrid,hybrid_rerank --out eval/results/retrieval.json`
+> 原始结果：`eval/results/retrieval.json`（含四种模式的 Hit@3 / MRR / 拒答统计）
+
 | 检索方式 | Hit@3 | MRR |
 |---|---|---|
 | 纯向量（bge-small-zh） | 18/36 = 50% | 0.421 |
@@ -110,18 +113,22 @@ python -m eval.gen_qa --n 45     # 写入 eval/qa_docs.jsonl
 ## 端到端（真调 DeepSeek / 36 条库内 + 6 条库外）
 
 ```bash
-RETRIEVE_MODE=vector        python -m eval.run_agent_eval --k 3
-RETRIEVE_MODE=hybrid_rerank python -m eval.run_agent_eval --k 3
+# 纯向量
+python -m eval.run_agent_eval --k 3 --mode vector        --out eval/results/end_to_end.json
+# 混合召回 + cross-encoder 精排
+python -m eval.run_agent_eval --k 3 --mode hybrid_rerank --out eval/results/end_to_end_rerank.json
 ```
+
+两份原始结果已在仓库里：`eval/results/end_to_end.json`、`eval/results/end_to_end_rerank.json`。
 
 | 指标 | 纯向量 | 混合 + 精排 |
 |---|---|---|
 | 库内 36 条：回答带引用 | 16/36 = 44% | **27/36 = 75%** |
 | 引用编号全部合法 | 16/36 | 27/36 |
 | 库外 6 条：正确拒答 | 6/6 | 6/6 |
-| 平均耗时 | **0.66 s/题** | 9.05 s/题 |
+| 平均耗时 | **0.64 s/题** | 4.63 s/题（本次复现，CPU）/ 9.05 s/题（机器负载高时） |
 
-**这张表是整个项目最该被记住的地方：精度 +31 个点，延迟 ×14。**
+**这张表是整个项目最该被记住的地方：精度 +31 个点，延迟 ×7～14（视 CPU 负载）。**
 所以工程上的结论不是"上精排"，而是"看清楚你在为什么买单"——
 在线服务可以先走向量（0.66s），把精排留给离线批处理或二次确认；
 或者只对 Top-10 精排、或换成 GPU。

@@ -1,0 +1,40 @@
+{
+  "index": "data/index_docs",
+  "backend": "bge",
+  "dim": 512,
+  "chunks": 1728,
+  "questions": 36,
+  "k": 3,
+  "modes": {
+    "vector": {
+      "hit": 18,
+      "n": 36,
+      "hit_rate": 50.0,
+      "mrr": 0.4213
+    },
+    "keyword": {
+      "hit": 15,
+      "n": 36,
+      "hit_rate": 41.7,
+      "mrr": 0.3056
+    },
+    "hybrid": {
+      "hit": 20,
+      "n": 36,
+      "hit_rate": 55.6,
+      "mrr": 0.4722
+    },
+    "hybrid_rerank": {
+      "hit": 28,
+      "n": 36,
+      "hit_rate": 77.8,
+      "mrr": 0.7639
+    },
+    "refusal": {
+      "threshold": 0.55,
+      "ok": 6,
+      "n": 6,
+      "rate": 100.0
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "index": "data/index_docs",
+  "k": 3,
+  "in_scope": {
+    "n": 36,
+    "with_citation": 16,
+    "all_valid": 16
+  },
+  "out_of_scope": {
+    "n": 6,
+    "refused": 6
+  },
+  "timing": {
+    "total_s": 26.9,
+    "avg_s_per_q": 0.64
+  }
+}

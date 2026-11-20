@@ -54,6 +54,7 @@ def main():
     ap.add_argument("--modes", default="vector,keyword,hybrid")
     ap.add_argument("--oos", default=os.path.join(ROOT, "eval", "qa_out_of_scope.jsonl"))
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--out", default="", help="把结果写成 JSON，便于复现与对比")
     args = ap.parse_args()
 
     idx = Index.load(args.index)
@@ -63,9 +64,12 @@ def main():
     print("-" * 60)
     print("%-10s %-14s %-8s" % ("模式", "Hit@%d" % args.k, "MRR"))
     results = {}
+    summary = {}
     for mode in [m.strip() for m in args.modes.split(",") if m.strip()]:
         hit, n, mrr, rows = eval_mode(idx, qa, args.k, mode)
         results[mode] = rows
+        summary[mode] = {"hit": hit, "n": n, "hit_rate": round(100.0 * hit / n, 1),
+                         "mrr": round(mrr, 4)}
         print("%-10s %-14s %-8.3f" % (mode, "%d/%d = %.0f%%" % (hit, n, 100.0 * hit / n), mrr))
 
     if args.verbose:
@@ -86,6 +90,26 @@ def main():
         print("-" * 60)
         print("拒答（仅向量模式可比）：阈值=%.2f  %d/%d = %.0f%%" %
               (thr, ok, len(oos), 100.0 * ok / len(oos)))
+        summary["refusal"] = {"threshold": thr, "ok": ok, "n": len(oos),
+                              "rate": round(100.0 * ok / len(oos), 1)}
+
+    if args.out:
+        payload = {
+            "index": os.path.relpath(args.index, ROOT).replace("\\", "/"),
+            "backend": idx.embedder.name,
+            "dim": int(idx.vectors.shape[1]),
+            "chunks": len(idx.chunks),
+            "questions": len(qa),
+            "k": args.k,
+            "modes": summary,
+        }
+        out_path = args.out if os.path.isabs(args.out) else os.path.join(ROOT, args.out)
+        d = os.path.dirname(out_path)
+        if d and not os.path.isdir(d):
+            os.makedirs(d)
+        with io.open(out_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        print("结果已写入 %s" % out_path)
 
 
 if __name__ == "__main__":

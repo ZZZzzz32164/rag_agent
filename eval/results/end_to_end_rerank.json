@@ -1,0 +1,18 @@
+{
+  "index": "data/index_docs",
+  "k": 3,
+  "mode": "hybrid_rerank",
+  "in_scope": {
+    "n": 36,
+    "with_citation": 27,
+    "all_valid": 27
+  },
+  "out_of_scope": {
+    "n": 6,
+    "refused": 6
+  },
+  "timing": {
+    "total_s": 194.3,
+    "avg_s_per_q": 4.63
+  }
+}
