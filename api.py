@@ -14,6 +14,7 @@
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 
@@ -21,8 +22,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from src import stats
 from src.agent import SYSTEM, RAGAgent
-from src.llm import chat_stream
+from src.llm import _load_dotenv, chat_stream
+from src.ratelimit import TokenBucket
+
+_load_dotenv()  # 让 /health 的 has_llm_key 与实际一致（.env 只在进程启动时读一次）
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 INDEX_DIR = os.environ.get("RAG_INDEX_DIR", os.path.join(ROOT, "data", "index"))
@@ -31,19 +36,76 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("rag-api")
 
-app = FastAPI(title="RAG QA API", version="1.0",
+app = FastAPI(title="RAG QA API", version="1.1",
               description="检索增强问答：bge 向量 + BM25/RRF 融合 + cross-encoder 精排 + 引用溯源与拒答")
 _agent = None
+
+# 限流：默认每 IP 平均 5 rps、最多突发 10；可用环境变量覆盖（压测时调大）。
+LIMITER = TokenBucket(rate=float(os.environ.get("RAG_RATE", "5")),
+                      burst=float(os.environ.get("RAG_BURST", "10")))
+RATE_ON = os.environ.get("RAG_RATE_ON", "1") != "0"
+
+# 问答缓存：同一问题重复问直接返回（面试演示时连问同一个问题能看出差别）。
+# 只缓存非拒答结果，TTL 默认 300s；命中率在 /metrics 里可查。
+CACHE_TTL = float(os.environ.get("RAG_CACHE_TTL", "300"))
+_cache = {}
+_cache_lock = threading.Lock()
+
+
+def _cache_get(key):
+    now = time.time()
+    with _cache_lock:
+        item = _cache.get(key)
+        if item and item[0] > now:
+            return item[1]
+        if item:
+            _cache.pop(key, None)
+    return None
+
+
+def _cache_put(key, value):
+    if CACHE_TTL <= 0:
+        return
+    with _cache_lock:
+        if len(_cache) > 500:          # 简单容量上限，避免无限增长
+            for k in list(_cache)[:100]:
+                _cache.pop(k, None)
+        _cache[key] = (time.time() + CACHE_TTL, value)
+
+
+def _client_key(request):
+    """限流维度：优先 X-Forwarded-For（部署在反代后面时），否则取连接地址。"""
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     """每个请求带一个 id，日志里能对上；也方便在客户端报错时定位。"""
     rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    request.state.rid = rid
+    if RATE_ON and request.url.path.startswith("/ask"):
+        key = _client_key(request)
+        ok, wait = LIMITER.take(key)
+        if not ok:
+            stats.record_error()
+            retry = max(1, int(round(wait + 0.5)))
+            log.warning("rate limited key=%s path=%s retry=%ss", key,
+                        request.url.path, retry)
+            return JSONResponse(
+                status_code=429,
+                headers={"Retry-After": str(retry), "X-Request-ID": rid,
+                         "X-RateLimit-Limit": str(int(LIMITER.rate)),
+                         "X-RateLimit-Remaining": "0"},
+                content={"error": {"code": "rate_limited",
+                                   "message": "too many requests, retry after %ss" % retry}})
     t0 = time.time()
     response = await call_next(request)
     cost = (time.time() - t0) * 1000
     response.headers["X-Request-ID"] = rid
+    stats.record_path(request.url.path)
     log.info("%s %s -> %d %.0fms rid=%s", request.method, request.url.path,
              response.status_code, cost, rid)
     return response
@@ -95,14 +157,27 @@ def health():
 
 
 @app.post("/ask")
-def ask(body: AskIn):
+def ask(body: AskIn, request: Request):
+    rid = getattr(request.state, "rid", "-")
+    key = (body.question.strip(), body.top_k)
+    t0 = time.time()
+    cached = _cache_get(key)
+    if cached is not None:
+        cost = (time.time() - t0) * 1000
+        stats.record(rid, body.question, cached["answer"], cost,
+                     cached["refused"], "cache", len(cached["hits"]), True)
+        out = dict(cached)
+        out["cached"] = True
+        out["rid"] = rid
+        return out
+
     a = agent()
     a.top_k = body.top_k
     r = a.ask(body.question)
     # 两道拒答：检索分低于阈值（agent 内部已判），或模型自己说"资料中没有"
     # —— 后者在库里没答案但检索分略高于阈值时会出现，不补这一步 refused 会误报 False。
     refused = bool(r["refused"]) or ("资料中没有相关内容" in (r.get("answer") or ""))
-    return {
+    out = {
         "question": body.question,
         "answer": r["answer"],
         "refused": refused,
@@ -112,7 +187,58 @@ def ask(body: AskIn):
              "heading": h["heading"], "source": h["source"]}
             for h in r["hits"]
         ],
+        "cached": False,
+        "rid": rid,
     }
+    cost = (time.time() - t0) * 1000
+    stats.record(rid, body.question, out["answer"], cost, refused,
+                 a.index.embedder.name, len(out["hits"]), False)
+    if not refused:
+        _cache_put(key, {k: v for k, v in out.items() if k not in ("cached", "rid")})
+    return out
+
+
+@app.post("/retrieve")
+def retrieve(body: AskIn):
+    """只做检索不做生成：返回命中片段与各阶段耗时。
+
+    用途有两个：
+      1) 压测检索链路（不消耗大模型额度），线上排查慢查询时先看这里；
+      2) 面试演示「在线向量 / 离线精排」的取舍 —— 精排到底花多少毫秒一目了然。
+    """
+    a = agent()
+    a.top_k = body.top_k
+    t0 = time.perf_counter()
+    hits = a.retrieve(body.question)
+    cost = (time.perf_counter() - t0) * 1000
+    return {
+        "question": body.question,
+        "latency_ms": round(cost, 1),
+        "refused_by_score": (not hits) or hits[0]["score"] < a.threshold,
+        "threshold": a.threshold,
+        "hits": [
+            {"rank": h["rank"], "score": round(h["score"], 3),
+             "heading": h["heading"], "source": h["source"],
+             "chars": len(h.get("text") or "")}
+            for h in hits
+        ],
+    }
+
+
+@app.get("/metrics")
+def metrics():
+    """运行指标：QPS、延迟分位、拒答率、缓存命中率、高频问题。"""
+    snap = stats.snapshot()
+    snap["rate_limit"] = LIMITER.state("_global")
+    snap["cache_entries"] = len(_cache)
+    snap["cache_ttl_s"] = CACHE_TTL
+    return snap
+
+
+@app.get("/logs")
+def logs(n: int = 20):
+    """最近的问答日志（落盘在 data/qa_log.db，可直接用 SQL 查）。"""
+    return {"db": stats.DB_PATH, "rows": stats.recent(max(1, min(200, n)))}
 
 
 @app.post("/ask/stream")

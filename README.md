@@ -150,20 +150,64 @@ uvicorn api:app --port 8000
 |---|---|
 | `GET /` | 演示页，输入问题直接看流式回答与命中来源 |
 | `GET /health` | 后端、维度、块数、当前阈值、是否配了 LLM key |
-| `POST /ask` | `{"question": "...", "top_k": 3}` → 回答 + 引用 + 命中列表 |
+| `POST /ask` | `{"question": "...", "top_k": 3}` → 回答 + 引用 + 命中列表（带缓存、带 `rid`） |
 | `POST /ask/stream` | 同上，SSE：先发 `event: hits`，再逐字 `event: token`，最后 `event: done` |
+| `POST /retrieve` | **只检索不生成**：返回命中片段 + 本次检索耗时，用于排查慢查询、压测不烧额度 |
+| `GET /metrics` | 运行指标：QPS、延迟 p50/p90/p95/p99、拒答率、缓存命中率、高频问题 |
+| `GET /logs` | 最近 N 条问答日志（同时落盘在 `data/qa_log.db`，可直接用 SQL 查） |
 
 工程细节（这几条不是装饰，是为了"能上线"）：
 
 - **每个请求都带 `X-Request-ID`**，日志里同一 rid 能串起来，客户端报错时可以直接把 id 给我；
 - **上游失败返回 503 而不是 500**：`{"error":{"code":"upstream_unavailable","message":"..."}}`，没配 `DEEPSEEK_API_KEY` 时也是这条，不会把堆栈吐给调用方；
-- **法请求返回 422**（FastAPI + Pydantic 自带），`top_k` 限制在 1–10；
-- LLM 调用本身已有 **60s 超时 + 3 次重试**（只重试 429/5xx，`src/llm.py`）。
+- **非法请求返回 422**（FastAPI + Pydantic 自带），`top_k` 限制在 1–10；
+- LLM 调用本身已有 **60s 超时 + 3 次重试**（只重试 429/5xx，`src/llm.py`）；
+- **令牌桶限流**：默认每 IP 5 rps / 突发 10，超了返回 **429 + `Retry-After` + `X-RateLimit-*`**（`src/ratelimit.py`）；
+- **问答缓存**：同题 5 分钟内直接返回（`RAG_CACHE_TTL`），拒答结果不缓存；
+- **每次问答落一行 SQLite**（`data/qa_log.db`：rid / 时间 / 问题 / 耗时 / 是否拒答 / 后端 / 命中数 / 是否命中缓存），单机零依赖，线上换 MySQL 只改 DSN。
+
+### 压测（本机实测，单进程 uvicorn）
+
+`bench.py` 用线程池压，输出 QPS 与延迟分位（`python bench.py --mode health --c 20 --n 50`）：
+
+| 场景 | 并发 | 请求数 | QPS | p50 | p95 | p99 |
+|---|---|---|---|---|---|---|
+| `GET /health` | 20 | 1000 | **164.8** | 114.9ms | 179.9ms | 260.9ms |
+| `GET /health` | 50 | 2000 | 151.2 | 285.2ms | 583.0ms | 741.3ms |
+
+并发 20 → 50 时 QPS 反而降、p95 从 180ms 涨到 583ms：**瓶颈是单进程 + 同步端点跑在 40 个线程的默认线程池里**，
+再往上加并发只是排队。这条结论写在这里，是因为它决定了后面要不要上多 worker / 异步化，而不是"数字好看就行"。
+
+| 链路 | 实测 |
+|---|---|
+| `POST /retrieve`（bge 编码 + 混合召回 + cross-encoder 精排 3 条） | **185–347ms** |
+| `POST /ask` 冷启动（真调 DeepSeek，非拒答） | **2019ms** |
+| `POST /ask` 命中缓存 | **7–18ms**（≈200×） |
+
+重复提问的收益是可量化的：同一问题第一次 2019ms，之后 7ms，`/metrics` 里 `cache_hit_rate` 直接反映这件事。
+
+**限流实测**（`RAG_RATE=2 RAG_BURST=3` 启动，连打 10 次）：
+
+```
+status sequence: [200, 200, 200, 200, 429, 429, 429, 429, 429, 429]
+429 body: {"error":{"code":"rate_limited","message":"too many requests, retry after 1s"}}  Retry-After: 1
+```
+
+**指标实测**（同样这几次请求之后）：
+
+```json
+{"requests":9,"errors":0,"latency_ms":{"p50":183.3,"p90":1157.5,"p95":1977.6,"samples":9},
+ "refused":4,"refused_rate":0.444,"cache_hits":3,"cache_hit_rate":0.333,
+ "top_questions":[{"q":"FastAPI 怎么用依赖注入？","n":4}],
+ "paths":{"/health":3002,"/retrieve":3,"/ask":18}}
+```
 
 ```bash
 curl -s localhost:8000/health
 curl -s -X POST localhost:8000/ask -H 'Content-Type: application/json' \
      -d '{"question":"为什么要留重叠","top_k":3}'
+curl -s localhost:8000/metrics
+curl -s 'localhost:8000/logs?n=5'
 ```
 
 ### Docker

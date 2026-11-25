@@ -3,3 +3,4 @@ __pycache__/
 .env
 data/index*/
 data/memory_test.json
+data/qa_log.db*
