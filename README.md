@@ -1,3 +1,5 @@
+![docker](https://github.com/ZZZzzz32164/rag_agent/actions/workflows/docker.yml/badge.svg)
+
 # rag_agent：带引用与评估的 RAG Agent
 
 一个可以讲清楚、也经得起追问的 RAG 项目：**切块 → 向量化 → 检索 → 强制引用 → 评估**，外加 token 预算和长期记忆。
