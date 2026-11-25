@@ -1,0 +1,63 @@
+name: docker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'requirements*.txt'
+      - 'api.py'
+      - 'src/**'
+      - '.github/workflows/docker.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: rag-agent:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image size
+        run: docker image ls rag-agent:ci
+
+      - name: Smoke test (/health)
+        run: |
+          set -e
+          docker run -d --name rag -p 8000:8000 rag-agent:ci
+          ok=0
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8000/health -o health.json; then ok=1; break; fi
+            sleep 5
+          done
+          echo "--- health.json ---"; cat health.json || true
+          echo "--- container logs ---"; docker logs rag || true
+          test "$ok" = "1"
+          python3 -c "import json;d=json.load(open('health.json'));assert d['status']=='ok' and int(d['chunks'])>0, d;print('health ok:',d)"
+
+      - name: Smoke test (/ 首页 + OpenAPI)
+        run: |
+          curl -fsS http://127.0.0.1:8000/ -o page.html
+          test -s page.html
+          curl -fsS http://127.0.0.1:8000/openapi.json -o openapi.json
+          python3 -c "import json;d=json.load(open('openapi.json'));print('paths:',sorted(d['paths']))"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-output
+          path: |
+            health.json
+            page.html
+            openapi.json
