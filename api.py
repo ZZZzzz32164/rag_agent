@@ -12,10 +12,13 @@
     GET  /                简单 HTML 演示页（无需前端构建）
 """
 import json
+import logging
 import os
+import time
+import uuid
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.agent import SYSTEM, RAGAgent
@@ -24,8 +27,44 @@ from src.llm import chat_stream
 ROOT = os.path.dirname(os.path.abspath(__file__))
 INDEX_DIR = os.environ.get("RAG_INDEX_DIR", os.path.join(ROOT, "data", "index"))
 
-app = FastAPI(title="RAG QA API", version="1.0")
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("rag-api")
+
+app = FastAPI(title="RAG QA API", version="1.0",
+              description="检索增强问答：bge 向量 + BM25/RRF 融合 + cross-encoder 精排 + 引用溯源与拒答")
 _agent = None
+
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    """每个请求带一个 id，日志里能对上；也方便在客户端报错时定位。"""
+    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    t0 = time.time()
+    response = await call_next(request)
+    cost = (time.time() - t0) * 1000
+    response.headers["X-Request-ID"] = rid
+    log.info("%s %s -> %d %.0fms rid=%s", request.method, request.url.path,
+             response.status_code, cost, rid)
+    return response
+
+
+@app.exception_handler(RuntimeError)
+async def upstream_error(request: Request, exc: RuntimeError):
+    """上游（DeepSeek）不可用 / 没配 key：返回 503，别让客户端看到 500 堆栈。"""
+    log.warning("upstream error: %s", exc)
+    return JSONResponse(status_code=503,
+                        content={"error": {"code": "upstream_unavailable",
+                                           "message": str(exc)}})
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    log.exception("unhandled error")
+    return JSONResponse(status_code=500,
+                        content={"error": {"code": "internal_error",
+                                           "message": type(exc).__name__}})
+
 
 
 def agent():
@@ -51,6 +90,7 @@ def health():
         "chunks": len(a.index.chunks),
         "threshold": a.threshold,
         "top_k": a.top_k,
+        "has_llm_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
     }
 
 
@@ -59,10 +99,13 @@ def ask(body: AskIn):
     a = agent()
     a.top_k = body.top_k
     r = a.ask(body.question)
+    # 两道拒答：检索分低于阈值（agent 内部已判），或模型自己说"资料中没有"
+    # —— 后者在库里没答案但检索分略高于阈值时会出现，不补这一步 refused 会误报 False。
+    refused = bool(r["refused"]) or ("资料中没有相关内容" in (r.get("answer") or ""))
     return {
         "question": body.question,
         "answer": r["answer"],
-        "refused": r["refused"],
+        "refused": refused,
         "citations": r["cited"],
         "hits": [
             {"rank": h["rank"], "score": round(h["score"], 3),

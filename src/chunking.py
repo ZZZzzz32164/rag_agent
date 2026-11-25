@@ -35,7 +35,7 @@ def _split_sentences(text):
     return [s.strip() for s in out if s.strip()]
 
 
-def split_text(text, chunk_size=500, overlap=80):
+def split_text(text, chunk_size=350, overlap=60):
     """返回 [{'heading':..., 'text':...}]。"""
     chunks = []
     for heading, body in _split_sections(text):

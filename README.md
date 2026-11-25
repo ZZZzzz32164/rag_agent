@@ -45,7 +45,7 @@ python -m src.agent "为什么切块要留重叠"
 ## 四个设计取舍（面试重点）
 
 **1. 为什么切块先按标题、再按句子**
-标题本身就是语义概括，按结构切能保证一块讲一件事；只有超长章节才退化成按句子切。块大小 500 字、重叠 80 字，重叠率 16%，防止答案被切在边界上。
+标题本身就是语义概括，按结构切能保证一块讲一件事；只有超长章节才退化成按句子切。块大小 **350 字、重叠 60 字**（重叠率 17%），防止答案被切在边界上。78 篇文档按这个参数切出 **1728 块**，下文所有指标都是在这套参数上测的（`src/chunking.py` 与 `python -m src.index build` 的默认值就是这套）。
 
 **2. 为什么向量后端做成可插拔**
 `bge` 是真实语义向量，效果最好但需要下载模型；`lsa` 用 TF-IDF + SVD 降维，纯 sklearn，零下载；`hash` 只做特征哈希，用来在没有网络时跑通链路。同一个接口三种实现，说明白"效果与工程成本"的权衡。
@@ -147,9 +147,16 @@ uvicorn api:app --port 8000
 | 接口 | 说明 |
 |---|---|
 | `GET /` | 演示页，输入问题直接看流式回答与命中来源 |
-| `GET /health` | 后端、维度、块数、当前阈值 |
+| `GET /health` | 后端、维度、块数、当前阈值、是否配了 LLM key |
 | `POST /ask` | `{"question": "...", "top_k": 3}` → 回答 + 引用 + 命中列表 |
 | `POST /ask/stream` | 同上，SSE：先发 `event: hits`，再逐字 `event: token`，最后 `event: done` |
+
+工程细节（这几条不是装饰，是为了"能上线"）：
+
+- **每个请求都带 `X-Request-ID`**，日志里同一 rid 能串起来，客户端报错时可以直接把 id 给我；
+- **上游失败返回 503 而不是 500**：`{"error":{"code":"upstream_unavailable","message":"..."}}`，没配 `DEEPSEEK_API_KEY` 时也是这条，不会把堆栈吐给调用方；
+- **法请求返回 422**（FastAPI + Pydantic 自带），`top_k` 限制在 1–10；
+- LLM 调用本身已有 **60s 超时 + 3 次重试**（只重试 429/5xx，`src/llm.py`）。
 
 ```bash
 curl -s localhost:8000/health
@@ -160,8 +167,40 @@ curl -s -X POST localhost:8000/ask -H 'Content-Type: application/json' \
 ### Docker
 
 ```bash
-docker build -t rag-agent .
+docker build -t rag-agent .                                  # 构建期建索引，失败即 build 失败
 docker run -p 8000:8000 -e DEEPSEEK_API_KEY=sk-xxx rag-agent
+curl -s localhost:8000/health                                # 容器自带 HEALTHCHECK
 ```
 
-镜像里会在构建期把索引建好（`data/index`），容器起来直接能答；torch 走 CPU 源，不含 CUDA。
+镜像设计上的几个决定：
+
+| 决定 | 为什么 |
+|---|---|
+| `python:3.11-slim` + torch 走 `download.pytorch.org/whl/cpu` | 不把 CUDA 塞进镜像（省 2GB+），本机没有 GPU 也跑得动 |
+| 构建期建索引，**不加 `\|\| echo skip`** | 索引是服务的必需品，建不出来就该让 build 失败，而不是产出一个 `/health` 直接 500 的镜像 |
+| `--chunk 350 --overlap 60` 写进构建命令 | 镜像里的索引必须和 README 的评估数字同参数（1728 块），否则数字对不上 |
+| 非 root 用户 `appuser` 跑服务 | 容器逃逸成本更高，属于部署基线 |
+| `HEALTHCHECK` 打 `/health` | 让编排系统（compose / k8s）能判断"活着且索引可用"，而不是只看进程在 |
+| `--workers 1` | 镜像里没有 Redis，多 worker 会各自载一份 bge 模型；要横向扩展得先抽出共享缓存 |
+
+### 这台机器没有装 Docker，怎么验证镜像能跑
+
+本机是 Windows 家庭版、无 WSL2、无管理员权限，装不了 Docker Desktop。
+所以把 Dockerfile 的每一步在**本地逐步复现**（除 `FROM` 那层），并把输出留档：
+
+| Dockerfile 里的步骤 | 本地怎么验 | 结果 |
+|---|---|---|
+| `pip install torch --index-url .../cpu` | 干净 venv 装 CPU 版 torch | 通过 |
+| `pip install -r requirements*.txt` | 同上 | 通过 |
+| `RUN python -m src.index build` | 同一命令、同一参数 | 通过，**1728 块 / bge / 512 维**，202s |
+| `CMD uvicorn api:app` | 同一条命令起服务 | 通过 |
+| `HEALTHCHECK curl /health` | `GET /health` | `200`，`{"status":"ok","backend":"bge","dim":512,"chunks":1728,...}` |
+| 冒烟 `/`、`/openapi.json` | 同上 | `200`，paths = `/`, `/ask`, `/ask/stream`, `/health` |
+
+真正的 `docker build` 由 **GitHub Actions 在云端跑**（`.github/workflows/docker.yml`）：
+构建 → 起容器 → 探 `/health` → 校验 `chunks>0` → 上传冒烟产物。
+本地这套复现的完整输出在 `docs/docker-local-proof.txt`。
+
+顺带在这次复现里修掉了一个真问题：**检索分刚过阈值、但模型自己答「资料中没有相关内容」时，`refused` 会误报 `false`**。
+现在 `/ask` 会把这种情况也算作拒答（`api.py` 里 `refused = r["refused"] or "资料中没有相关内容" in answer`），
+证据在同一份 proof 的第 10 节：同一道题修复前 `refused=false`、修复后 `refused=true`。

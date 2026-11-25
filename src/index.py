@@ -30,7 +30,7 @@ class Index(object):
 
     # ---------- 构建 ----------
     @classmethod
-    def build(cls, knowledge_dir, chunk_size=500, overlap=80, backend="auto"):
+    def build(cls, knowledge_dir, chunk_size=350, overlap=60, backend="auto"):
         texts = []
         for dirpath, _dirnames, filenames in os.walk(knowledge_dir):
             for name in sorted(filenames):
@@ -149,8 +149,8 @@ def main():
     ap.add_argument("--data", default=os.path.join(ROOT, "data", "corpus"))
     ap.add_argument("--mode", default="hybrid")
     ap.add_argument("--index", default=os.path.join(ROOT, "data", "index"))
-    ap.add_argument("--chunk", type=int, default=500)
-    ap.add_argument("--overlap", type=int, default=80)
+    ap.add_argument("--chunk", type=int, default=350)
+    ap.add_argument("--overlap", type=int, default=60)
     ap.add_argument("--backend", default="auto")
     ap.add_argument("--q", default="")
     ap.add_argument("--k", type=int, default=3)

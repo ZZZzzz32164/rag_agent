@@ -1,6 +1,11 @@
 .env
 __pycache__/
 *.pyc
-data/index*/
 .git/
+.github/
+data/index*/
 dump.rdb
+tests/
+*.log
+.venv/
+.venv-docker/
