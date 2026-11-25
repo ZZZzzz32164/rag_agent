@@ -9,8 +9,12 @@ LABEL org.opencontainers.image.title="rag_agent" \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    HF_ENDPOINT=https://hf-mirror.com \
     RAG_INDEX_DIR=/app/data/index
+
+# HuggingFace 下载源：默认官方站（CI 上能直连）；国内构建时用
+#   docker build --build-arg HF_ENDPOINT=https://hf-mirror.com -t rag-agent .
+ARG HF_ENDPOINT=https://huggingface.co
+ENV HF_ENDPOINT=${HF_ENDPOINT}
 
 WORKDIR /app
 
@@ -32,11 +36,12 @@ COPY . .
 # 切块参数必须和评估时一致（350 字 / 重叠 60 → 1728 块），否则镜像里的索引和 README 数字对不上。
 # 这里故意不带兜底：建索引失败就让整个 build 失败，不允许产出一个跑不起来的镜像。
 RUN python -m src.index build --backend auto --chunk 350 --overlap 60 --index "$RAG_INDEX_DIR" \
-    && python -c "import json,os; \
+    && python -c "import json,os,sys; \
 d=os.environ['RAG_INDEX_DIR']; \
 c=json.load(open(os.path.join(d,'chunks.json'),encoding='utf-8')); \
 m=json.load(open(os.path.join(d,'meta.json'),encoding='utf-8')); \
-print('index ok: chunks=%d backend=%s dim=%s' % (len(c), m.get('backend'), m.get('dim')))"
+print('index ok: chunks=%d backend=%s dim=%s' % (len(c), m.get('backend'), m.get('dim'))); \
+sys.exit(0 if m.get('backend')=='bge' and len(c)==1728 else 1)"
 
 RUN chown -R appuser:appuser /app
 USER appuser

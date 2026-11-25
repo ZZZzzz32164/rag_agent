@@ -168,8 +168,21 @@ curl -s -X POST localhost:8000/ask -H 'Content-Type: application/json' \
 
 ```bash
 docker build -t rag-agent .                                  # 构建期建索引，失败即 build 失败
+```
+
+**CI 实测**（GitHub Actions，run #1 → #2）：镜像 `rag-agent:ci` 构建成功，磁盘占用 **2.32GB**（压缩后 532MB）；
+容器起来后 `/health` 返回 `{"status":"ok","backend":"bge","dim":512,"chunks":1728}`，`/openapi.json` 的 paths 为 `/`、`/ask`、`/ask/stream`、`/health`。
+第一次 CI 还抓到一个问题：**镜像里 `--backend auto` 悄悄降级成了 LSA（dim=256）**，因为构建环境连不上 hf-mirror 下不了 bge 模型。
+现在 Dockerfile 里加了断言——`backend != bge` 或 `chunks != 1728` 直接让 build 失败，不再产出"看起来能用、其实换了模型"的镜像。
+
 docker run -p 8000:8000 -e DEEPSEEK_API_KEY=sk-xxx rag-agent
 curl -s localhost:8000/health                                # 容器自带 HEALTHCHECK
+```
+
+国内网络构建时把 HuggingFace 源换成镜像（否则 bge 模型下不下来，构建会**故意失败**而不是偷偷降级成 LSA）：
+
+```bash
+docker build --build-arg HF_ENDPOINT=https://hf-mirror.com -t rag-agent .
 ```
 
 镜像设计上的几个决定：
