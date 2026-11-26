@@ -14,7 +14,9 @@
 import json
 import logging
 import os
+import anyio
 import threading
+from collections import OrderedDict
 import time
 import uuid
 
@@ -47,8 +49,9 @@ RATE_ON = os.environ.get("RAG_RATE_ON", "1") != "0"
 
 # 问答缓存：同一问题重复问直接返回（面试演示时连问同一个问题能看出差别）。
 # 只缓存非拒答结果，TTL 默认 300s；命中率在 /metrics 里可查。
-CACHE_TTL = float(os.environ.get("RAG_CACHE_TTL", "300"))
-_cache = {}
+CACHE_TTL = float(os.environ.get("RAG_CACHE_TTL", "3600"))
+CACHE_MAX = int(os.environ.get("RAG_CACHE_MAX", "500"))
+_cache = OrderedDict()
 _cache_lock = threading.Lock()
 
 
@@ -57,6 +60,7 @@ def _cache_get(key):
     with _cache_lock:
         item = _cache.get(key)
         if item and item[0] > now:
+            _cache.move_to_end(key)          # LRU：命中即刷新位置
             return item[1]
         if item:
             _cache.pop(key, None)
@@ -67,9 +71,9 @@ def _cache_put(key, value):
     if CACHE_TTL <= 0:
         return
     with _cache_lock:
-        if len(_cache) > 500:          # 简单容量上限，避免无限增长
-            for k in list(_cache)[:100]:
-                _cache.pop(k, None)
+        if len(_cache) >= CACHE_MAX:
+            while len(_cache) >= CACHE_MAX:
+                _cache.popitem(last=False)   # LRU：淘汰最久未使用
         _cache[key] = (time.time() + CACHE_TTL, value)
 
 
@@ -157,7 +161,7 @@ def health():
 
 
 @app.post("/ask")
-def ask(body: AskIn, request: Request):
+async def ask(body: AskIn, request: Request):
     rid = getattr(request.state, "rid", "-")
     key = (body.question.strip(), body.top_k)
     t0 = time.time()
@@ -173,7 +177,7 @@ def ask(body: AskIn, request: Request):
 
     a = agent()
     a.top_k = body.top_k
-    r = a.ask(body.question)
+    r = await anyio.to_thread.run_sync(a.ask, body.question)
     # 两道拒答：检索分低于阈值（agent 内部已判），或模型自己说"资料中没有"
     # —— 后者在库里没答案但检索分略高于阈值时会出现，不补这一步 refused 会误报 False。
     refused = bool(r["refused"]) or ("资料中没有相关内容" in (r.get("answer") or ""))
@@ -193,13 +197,14 @@ def ask(body: AskIn, request: Request):
     cost = (time.time() - t0) * 1000
     stats.record(rid, body.question, out["answer"], cost, refused,
                  a.index.embedder.name, len(out["hits"]), False)
-    if not refused:
-        _cache_put(key, {k: v for k, v in out.items() if k not in ("cached", "rid")})
+    # 拒答也缓存：给定索引 + 阈值 + temperature=0，拒答是确定性的；
+    # 不缓存会让重复的库外问题每次都跑满检索 + 一次大模型调用（实测命中率因此只有 25%）。
+    _cache_put(key, {k: v for k, v in out.items() if k not in ("cached", "rid")})
     return out
 
 
 @app.post("/retrieve")
-def retrieve(body: AskIn):
+async def retrieve(body: AskIn):
     """只做检索不做生成：返回命中片段与各阶段耗时。
 
     用途有两个：
@@ -209,7 +214,7 @@ def retrieve(body: AskIn):
     a = agent()
     a.top_k = body.top_k
     t0 = time.perf_counter()
-    hits = a.retrieve(body.question)
+    hits = await anyio.to_thread.run_sync(a.retrieve, body.question)
     cost = (time.perf_counter() - t0) * 1000
     return {
         "question": body.question,
