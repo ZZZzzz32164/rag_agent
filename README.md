@@ -4,6 +4,51 @@
 
 一个可以讲清楚、也经得起追问的 RAG 项目：**切块 → 向量化 → 检索 → 强制引用 → 评估**，外加 token 预算和长期记忆。
 
+## 证据索引（Evidence Index）
+
+> 简历上每个数字都能在这里落地：一张图、一张表、三行命令。
+
+**架构**
+
+```
+        ┌──────────── 一次问答 ────────────┐
+ 问句 → │ BM25 召回 ┐                      │
+        │ 向量召回 ┴→ RRF 融合 → cross-encoder 精排 → DeepSeek 生成
+        │                                   │ → [n] 引用校验 → 库外拒答
+        └───────────────────────────────────┘
+  服务层 FastAPI：/ask · /ask/stream(SSE) · /retrieve · /health · /metrics · /logs
+  稳定性：令牌桶限流(429) · 超时与重试 · 统一错误码(422/429/503) · X-Request-ID
+  数据层：SQLite qa_log（每问一行）+ 进程内 LRU 缓存（key=问题+top_k+mode）
+  交付：非 root 镜像 + 构建期建索引 + 启动断言 + HEALTHCHECK + GitHub Actions
+```
+
+**指标（可复现，均来自仓库内脚本）**
+
+| 指标 | 数值 | 复现命令 / 证据文件 |
+|---|---|---|
+| 语料规模 | 78 篇 / 约 38 万字 / 1728 块 | `python -m src.index build` 输出 · `data/index_docs/meta.json` |
+| 检索 Hit@3 | 纯向量 50% · 纯 BM25 42% · RRF 56% · 加精排 78%（MRR 0.764） | `python -m eval.run_eval --k 3` · `eval/results/retrieval.json` |
+| 端到端引用合法率 | 44% → 75%（加精排后） | `python -m eval.run_agent_eval` · `eval/results/end_to_end*.json` |
+| 库外拒答 | 6/6 正确（余弦阈值 0.55） | `eval/qa_out_of_scope.jsonl` |
+| 并发 | 20 并发 × 50 次 /health：540–630 QPS，p50 29ms，p95 46ms | `python bench.py --mode health --c 20 --n 50` |
+| 缓存 | 同题 987ms → 13–16ms（命中率 50%） | `GET /metrics` · `GET /logs` |
+| 容器 | 2.36GB 镜像，容器内 `/health` = bge / 512 / 1728 | GitHub Actions `docker.yml` 运行记录 |
+
+**三行复现**
+
+```bash
+docker build -t rag-agent . && docker run -p 8000:8000 rag-agent
+curl -s localhost:8000/health
+python bench.py --mode health --base http://127.0.0.1:8000 --c 20 --n 50
+```
+
+**失败案例（面试常问）**
+
+- 容器内向量后端曾**静默降级成 LSA（256 维）而服务仍返 200** → 加启动断言，让「看起来正常」的故障变成启动失败。
+- 缓存最初只缓存非拒答样本，复放命中率仅 25% → 改成拒答也缓存（答案确定性），命中率升到 50%。
+- 试过用 LLM 判相关性替代 cross-encoder，单条 3–13s 且结果不稳，放弃并保留精排离线评估。
+
+
 ## 目录
 
 ```
